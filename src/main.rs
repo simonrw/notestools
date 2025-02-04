@@ -1,11 +1,17 @@
 use clap::{Parser, Subcommand};
-use color_eyre::eyre;
+use color_eyre::eyre::{self, ContextCompat};
 use regex::RegexBuilder;
 use std::{
     fmt::{self, Display},
     fs::File,
     io::{BufRead, BufReader, Lines},
     path::{Path, PathBuf},
+};
+use syntect::{
+    easy::HighlightLines,
+    highlighting::{Style, ThemeSet},
+    parsing::SyntaxSet,
+    util::{as_24_bit_terminal_escaped, LinesWithEndings},
 };
 
 #[derive(Debug, Parser)]
@@ -25,6 +31,8 @@ enum Command {
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
 
+    let ps = SyntaxSet::load_defaults_newlines();
+    let ts = ThemeSet::load_defaults();
     let notes_file = args.path.unwrap_or_else(|| {
         dirs::home_dir()
             .expect("Failed to get home directory")
@@ -35,7 +43,7 @@ fn main() -> eyre::Result<()> {
         Command::Select { regex } => {
             let blocks = select_blocks(&regex, &notes_file)?;
             for block in blocks {
-                println!("{block}");
+                block.highlight(&ps, &ts)?;
             }
         }
     }
@@ -49,11 +57,29 @@ struct Block {
     content: Vec<String>,
 }
 
-impl Display for Block {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{}", self.title)?;
+impl Block {
+    fn text(&self) -> String {
+        let mut text = String::new();
+        text.push_str(&self.title);
+        text.push('\n');
         for line in &self.content {
-            writeln!(f, "{}", line)?;
+            text.push_str(line);
+            text.push('\n');
+        }
+        text
+    }
+
+    fn highlight(&self, ps: &SyntaxSet, ts: &ThemeSet) -> eyre::Result<()> {
+        let syntax = ps
+            .find_syntax_by_extension("md")
+            .context("Failed to find syntax for markdown")?;
+        let mut h = HighlightLines::new(syntax, &ts.themes["base16-eighties.dark"]);
+
+        let text = self.text();
+        for line in LinesWithEndings::from(&text) {
+            let ranges: Vec<(Style, &str)> = h.highlight_line(line, ps)?;
+            let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
+            println!("{}", escaped);
         }
         Ok(())
     }

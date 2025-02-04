@@ -1,15 +1,14 @@
 use clap::{Parser, Subcommand};
-use color_eyre::eyre::{self, ContextCompat};
+use color_eyre::eyre::{self, Context, ContextCompat};
 use regex::RegexBuilder;
 use std::{
-    fmt::{self, Display},
     fs::File,
-    io::{BufRead, BufReader, Lines},
+    io::{BufRead, BufReader, Cursor, Lines},
     path::{Path, PathBuf},
 };
 use syntect::{
     easy::HighlightLines,
-    highlighting::{Style, ThemeSet},
+    highlighting::{Style, Theme, ThemeSet},
     parsing::SyntaxSet,
     util::{as_24_bit_terminal_escaped, LinesWithEndings},
 };
@@ -32,7 +31,11 @@ fn main() -> eyre::Result<()> {
     let args = Args::parse();
 
     let ps = SyntaxSet::load_defaults_newlines();
-    let ts = ThemeSet::load_defaults();
+    // load catppuccin
+    let catppuccin_bytes = include_bytes!("../assets/catppuccin-macchiato.tmTheme");
+    let mut catppuccin_reader = Cursor::new(catppuccin_bytes);
+    let theme = ThemeSet::load_from_reader(&mut catppuccin_reader).context("loading theme")?;
+
     let notes_file = args.path.unwrap_or_else(|| {
         dirs::home_dir()
             .expect("Failed to get home directory")
@@ -43,7 +46,7 @@ fn main() -> eyre::Result<()> {
         Command::Select { regex } => {
             let blocks = select_blocks(&regex, &notes_file)?;
             for block in blocks {
-                block.highlight(&ps, &ts)?;
+                block.highlight(&ps, &theme)?;
             }
         }
     }
@@ -69,11 +72,11 @@ impl Block {
         text
     }
 
-    fn highlight(&self, ps: &SyntaxSet, ts: &ThemeSet) -> eyre::Result<()> {
+    fn highlight(&self, ps: &SyntaxSet, theme: &Theme) -> eyre::Result<()> {
         let syntax = ps
             .find_syntax_by_extension("md")
             .context("Failed to find syntax for markdown")?;
-        let mut h = HighlightLines::new(syntax, &ts.themes["base16-eighties.dark"]);
+        let mut h = HighlightLines::new(syntax, theme);
 
         let text = self.text();
         for line in LinesWithEndings::from(&text) {

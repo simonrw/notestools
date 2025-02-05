@@ -1,4 +1,5 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
 use color_eyre::eyre::{self, Context, ContextCompat};
 use regex::RegexBuilder;
 use std::{
@@ -24,7 +25,13 @@ struct Args {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    Select { regex: String },
+    Select {
+        regex: String,
+    },
+    Completion {
+        #[arg(short, long)]
+        shell: Shell,
+    },
 }
 
 fn main() -> eyre::Result<()> {
@@ -48,6 +55,10 @@ fn main() -> eyre::Result<()> {
             for block in blocks {
                 block.highlight(&ps, &theme)?;
             }
+        }
+        Command::Completion { shell } => {
+            let mut cmd = Args::command();
+            clap_complete::generate(shell, &mut cmd, "notes", &mut std::io::stdout());
         }
     }
 
